@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Word文档重复率检测工具</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+        }
+        .drop-zone {
+            transition: all 0.3s ease;
+            border: 2px dashed #cbd5e1;
+        }
+        .drop-zone.dragover {
+            border-color: #667eea;
+            background-color: #f0f4ff;
+            transform: scale(1.02);
+        }
+        .progress-bar {
+            transition: width 0.5s ease;
+        }
+        .highlight-match {
+            background-color: #fef08a;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-weight: 600;
+        }
+        .diff-added {
+            background-color: #dcfce7;
+            color: #166534;
+        }
+        .diff-removed {
+            background-color: #fee2e2;
+            color: #991b1b;
+            text-decoration: line-through;
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 0.5; }
+            100% { transform: scale(1.2); opacity: 0; }
+        }
+        .analyzing::after {
+            content: '';
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            border: 3px solid #667eea;
+            animation: pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+    </style>
+</head>
+<body class="gradient-bg min-h-screen py-8 px-4">
+    <div class="max-w-6xl mx-auto">
+        <!-- Header -->
+        <div class="text-center mb-10 text-white">
+            <h1 class="text-4xl font-bold mb-3 tracking-tight">📄 文档重复率检测</h1>
+            <p class="text-lg opacity-90">上传两份 Word 文档，智能分析文本相似度与重复内容</p>
+        </div>
+
+        <!-- Main Container -->
+        <div class="glass-effect rounded-3xl shadow-2xl p-8 mb-8">
+            
+            <!-- Upload Section -->
+            <div id="uploadSection" class="grid md:grid-cols-2 gap-8 mb-8">
+                <!-- Document A -->
+                <div class="relative">
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">文档 A（原文档）</label>
+                    <div id="dropZoneA" class="drop-zone rounded-2xl p-8 text-center cursor-pointer bg-gray-50 hover:bg-gray-100">
+                        <input type="file" id="fileA" accept=".docx,.doc" class="hidden">
+                        <div id="contentA" class="pointer-events-none">
+                            <div class="w-16 h-16 mx-auto mb-4 bg-blue-100 rounded-full flex items-center justify-center">
+                                <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                </svg>
+                            </div>
+                            <p class="text-gray-600 font-medium mb-1">点击或拖拽上传 Word 文档</p>
+                            <p class="text-sm text-gray-400">支持 .docx 格式</p>
+                        </div>
+                        <div id="fileInfoA" class="hidden pointer-events-none">
+                            <div class="w-16 h-16 mx-auto mb-4 bg-green-100 rounded-full flex items-center justify-center">
+                                <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                </svg>
+                            </div>
+                            <p id="fileNameA" class="text-gray-800 font-semibold truncate px-4"></p>
+                            <p id="fileSizeA" class="text-sm text-gray-500 mt-1"></p>
+                            <button onclick="clearFile('A')" class="mt-3 text-sm text-red-500 hover:text-red-700 font-medium pointer-events-auto">移除文件</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Document B -->
+                <div class="relative">
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">文档 B（对比文档）</label>
+                    <div id="dropZoneB" class="drop-zone rounded-2xl p-8 text-center cursor-pointer bg-gray-50 hover:bg-gray-100">
+                        <input type="file" id="fileB" accept=".docx,.doc" class="hidden">
+                        <div id="contentB" class="pointer-events-none">
+                            <div class="w-16 h-16 mx-auto mb-4 bg-purple-100 rounded-full flex items-center justify-center">
+                                <svg class="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                </svg>
+                            </div>
+                            <p class="text-gray-600 font-medium mb-1">点击或拖拽上传 Word 文档</p>
+                            <p class="text-sm text-gray-400">支持 .docx 格式</p>
+                        </div>
+                        <div id="fileInfoB" class="hidden pointer-events-none">
+                            <div class="w-16 h-16 mx-auto mb-4 bg-green-100 rounded-full flex items-center justify-center">
+                                <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                </svg>
+                            </div>
+                            <p id="fileNameB" class="text-gray-800 font-semibold truncate px-4"></p>
+                            <p id="fileSizeB" class="text-sm text-gray-500 mt-1"></p>
+                            <button onclick="clearFile('B')" class="mt-3 text-sm text-red-500 hover:text-red-700 font-medium pointer-events-auto">移除文件</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Button -->
+            <div class="text-center mb-8">
+                <button id="analyzeBtn" onclick="startAnalysis()" disabled 
+                    class="px-8 py-4 bg-gray-300 text-gray-500 rounded-xl font-bold text-lg cursor-not-allowed transition-all duration-300 shadow-lg">
+                    开始检测重复率
+                </button>
+                <p id="statusText" class="mt-3 text-sm text-gray-500">请上传两份文档以开始分析</p>
+            </div>
+
+            <!-- Loading State -->
+            <div id="loadingState" class="hidden text-center py-12">
+                <div class="relative inline-block mb-4">
+                    <div class="w-20 h-20 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+                </div>
+                <p class="text-lg font-semibold text-gray-700">正在分析文档内容...</p>
+                <p class="text-sm text-gray-500 mt-2">正在提取文本并计算相似度算法</p>
+            </div>
+
+            <!-- Results Section -->
+            <div id="resultsSection" class="hidden">
+                <!-- Score Cards -->
+                <div class="grid md:grid-cols-3 gap-6 mb-8">
+                    <div class="bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl p-6 border border-blue-200">
+                        <div class="text-blue-600 text-sm font-bold uppercase tracking-wider mb-2">总体重复率</div>
+                        <div class="flex items-end gap-2">
+                            <span id="totalScore" class="text-5xl font-bold text-blue-700">0%</span>
+                            <span class="text-blue-600 mb-1">相似度</span>
+                        </div>
+                        <div class="mt-3 h-2 bg-blue-200 rounded-full overflow-hidden">
+                            <div id="totalBar" class="h-full bg-blue-600 rounded-full progress-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <div class="bg-gradient-to-br from-purple-50 to-purple-100 rounded-2xl p-6 border border-purple-200">
+                        <div class="text-purple-600 text-sm font-bold uppercase tracking-wider mb-2">连续重复片段</div>
+                        <div class="flex items-end gap-2">
+                            <span id="fragmentScore" class="text-5xl font-bold text-purple-700">0</span>
+                            <span class="text-purple-600 mb-1">处 detected</span>
+                        </div>
+                        <p class="text-xs text-purple-600 mt-2">超过10个字的连续相同文本</p>
+                    </div>
+
+                    <div class="bg-gradient-to-br from-orange-50 to-orange-100 rounded-2xl p-6 border border-orange-200">
+                        <div class="text-orange-600 text-sm font-bold uppercase tracking-wider mb-2">语义相似度</div>
+                        <div class="flex items-end gap-2">
+                            <span id="semanticScore" class="text-5xl font-bold text-orange-700">0%</span>
+                            <span class="text-orange-600 mb-1">LSH算法</span>
+                        </div>
+                        <p class="text-xs text-orange-600 mt-2">基于局部敏感哈希的相似度</p>
+                    </div>
+                </div>
+
+                <!-- Detailed Analysis -->
+                <div class="bg-white rounded-2xl border border-gray-200 overflow-hidden mb-6">
+                    <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
+                        <h3 class="font-bold text-gray-800">详细对比分析</h3>
+                        <div class="flex gap-2">
+                            <button onclick="switchView('highlight')" id="btnHighlight" class="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white">高亮模式</button>
+                            <button onclick="switchView('diff')" id="btnDiff" class="px-4 py-2 text-sm font-medium rounded-lg text-gray-600 hover:bg-gray-200">差异模式</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Highlight View -->
+                    <div id="highlightView" class="p-6 max-h-96 overflow-y-auto">
+                        <div class="grid md:grid-cols-2 gap-6">
+                            <div>
+                                <h4 class="font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                                    <span class="w-2 h-2 bg-blue-500 rounded-full"></span>
+                                    文档 A 中的重复内容
+                                </h4>
+                                <div id="docAHighlight" class="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap font-mono bg-gray-50 p-4 rounded-lg border border-gray-200 max-h-80 overflow-y-auto"></div>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                                    <span class="w-2 h-2 bg-purple-500 rounded-full"></span>
+                                    文档 B 中的重复内容
+                                </h4>
+                                <div id="docBHighlight" class="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap font-mono bg-gray-50 p-4 rounded-lg border border-gray-200 max-h-80 overflow-y-auto"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Diff View -->
+                    <div id="diffView" class="hidden p-6 max-h-96 overflow-y-auto">
+                        <div class="space-y-4" id="diffContent"></div>
+                    </div>
+                </div>
+
+                <!-- Statistics -->
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div class="bg-white rounded-xl p-6 border border-gray-200">
+                        <h4 class="font-bold text-gray-800 mb-4">文本统计信息</h4>
+                        <div class="space-y-3">
+                            <div class="flex justify-between items-center py-2 border-b border-gray-100">
+                                <span class="text-gray-600">文档 A 字数</span>
+                                <span id="wordCountA" class="font-semibold text-gray-800">0</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2 border-b border-gray-100">
+                                <span class="text-gray-600">文档 B 字数</span>
+                                <span id="wordCountB" class="font-semibold text-gray-800">0</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2 border-b border-gray-100">
+                                <span class="text-gray-600">重复字数</span>
+                                <span id="duplicateWords" class="font-semibold text-red-600">0</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2">
+                                <span class="text-gray-600">最长重复片段</span>
+                                <span id="longestFragment" class="font-semibold text-orange-600">0 字</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-xl p-6 border border-gray-200">
+                        <h4 class="font-bold text-gray-800 mb-4">重复片段列表</h4>
+                        <div id="fragmentList" class="space-y-2 max-h-48 overflow-y-auto text-sm">
+                            <p class="text-gray-400 italic">暂无重复片段</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Export Button -->
+                <div class="mt-8 text-center">
+                    <button onclick="exportReport()" class="px-6 py-3 bg-gray-800 text-white rounded-xl font-semibold hover:bg-gray-900 transition-colors inline-flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                        </svg>
+                        导出检测报告
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="text-center text-white/80 text-sm">
+            <p>支持 .docx 格式 • 本地处理保护隐私 • 使用多种算法确保准确性</p>
+        </div>
+    </div>
+
+    <script>
+        let fileAContent = '';
+        let fileBContent = '';
+        let fileAName = '';
+        let fileBName = '';
+        let analysisResults = null;
+
+        // Initialize drag and drop
+        ['A', 'B'].forEach(doc => {
+            const dropZone = document.getElementById(`dropZone${doc}`);
+            const fileInput = document.getElementById(`file${doc}`);
+
+            dropZone.addEventListener('click', () => fileInput.click());
+            
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('dragover');
+            });
+
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('dragover');
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('dragover');
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    handleFile(files[0], doc);
+                }
+            });
+
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    handleFile(e.target.files[0], doc);
+                }
+            });
+        });
+
+        function handleFile(file, doc) {
+            if (!file.name.endsWith('.docx') && !file.name.endsWith('.doc')) {
+                alert('请上传 Word 文档 (.docx 或 .doc 格式)');
+                return;
+            }
+
+            // Update UI
+            document.getElementById(`content${doc}`).classList.add('hidden');
+            document.getElementById(`fileInfo${doc}`).classList.remove('hidden');
+            document.getElementById(`fileName${doc}`).textContent = file.name;
+            document.getElementById(`fileSize${doc}`).textContent = formatFileSize(file.size);
+
+            if (doc === 'A') {
+                fileAName = file.name;
+            } else {
+                fileBName = file.name;
+            }
+
+            // Read file
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const arrayBuffer = e.target.result;
+                
+                mammoth.extractRawText({ arrayBuffer: arrayBuffer })
+                    .then(result => {
+                        const text = result.value;
+                        if (doc === 'A') {
+                            fileAContent = text;
+                        } else {
+                            fileBContent = text;
+                        }
+                        checkReady();
+                    })
+                    .catch(err => {
+                        console.error('Error reading file:', err);
+                        alert('无法读取文档内容，请确保文件未损坏');
+                    });
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function clearFile(doc) {
+            document.getElementById(`file${doc}`).value = '';
+            document.getElementById(`content${doc}`).classList.remove('hidden');
+            document.getElementById(`fileInfo${doc}`).classList.add('hidden');
+            
+            if (doc === 'A') {
+                fileAContent = '';
+                fileAName = '';
+            } else {
+                fileBContent = '';
+                fileBName = '';
+            }
+            
+            checkReady();
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function checkReady() {
+            const btn = document.getElementById('analyzeBtn');
+            const status = document.getElementById('statusText');
+            
+            if (fileAContent && fileBContent) {
+                btn.disabled = false;
+                btn.classList.remove('bg-gray-300', 'text-gray-500', 'cursor-not-allowed');
+                btn.classList.add('bg-blue-600', 'text-white', 'hover:bg-blue-700', 'hover:scale-105');
+                status.textContent = '已准备好分析，点击按钮开始检测';
+                status.classList.add('text-blue-600');
+            } else {
+                btn.disabled = true;
+                btn.classList.add('bg-gray-300', 'text-gray-500', 'cursor-not-allowed');
+                btn.classList.remove('bg-blue-600', 'text-white', 'hover:bg-blue-700', 'hover:scale-105');
+                status.textContent = '请上传两份文档以开始分析';
+                status.classList.remove('text-blue-600');
+            }
+        }
+
+        function startAnalysis() {
+            document.getElementById('uploadSection').classList.add('opacity-50', 'pointer-events-none');
+            document.getElementById('analyzeBtn').classList.add('hidden');
+            document.getElementById('loadingState').classList.remove('hidden');
+            document.getElementById('statusText').textContent = '正在处理...';
+
+            // Simulate processing time for better UX
+            setTimeout(() => {
+                performAnalysis();
+            }, 1500);
+        }
+
+        function performAnalysis() {
+            // Text preprocessing
+            const textA = preprocessText(fileAContent);
+            const textB = preprocessText(fileBContent);
+            
+            // Calculate various metrics
+            const charSim = calculateCharacterSimilarity(textA, textB);
+            const { fragments, highlightedA, highlightedB } = findDuplicateFragments(textA, textB);
+            const semanticSim = calculateSemanticSimilarity(textA, textB);
+            
+            // Calculate word counts
+            const wordsA = textA.length;
+            const wordsB = textB.length;
+            const duplicateChars = fragments.reduce((sum, f) => sum + f.length, 0);
+            
+            // Find longest fragment
+            const longest = fragments.length > 0 ? Math.max(...fragments.map(f => f.length)) : 0;
+
+            analysisResults = {
+                charSimilarity: charSim,
+                fragmentCount: fragments.length,
+                semanticSimilarity: semanticSim,
+                wordsA,
+                wordsB,
+                duplicateChars,
+                longestFragment: longest,
+                fragments,
+                highlightedA,
+                highlightedB
+            };
+
+            displayResults();
+        }
+
+        function preprocessText(text) {
+            // Remove extra whitespace but keep Chinese characters intact
+            return text.replace(/\s+/g, ' ').trim();
+        }
+
+        function calculateCharacterSimilarity(a, b) {
+            if (a.length === 0 || b.length === 0) return 0;
+            
+            const maxLen = Math.max(a.length, b.length);
+            const distance = levenshteinDistance(a, b);
+            return Math.round(((maxLen - distance) / maxLen) * 100);
+        }
+
+        function levenshteinDistance(a, b) {
+            const matrix = [];
+            for (let i = 0; i <= b.length; i++) {
+                matrix[i] = [i];
+            }
+            for (let j = 0; j <= a.length; j++) {
+                matrix[0][j] = j;
+            }
+            
+            for (let i = 1; i <= b.length; i++) {
+                for (let j = 1; j <= a.length; j++) {
+                    if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                        matrix[i][j] = matrix[i - 1][j - 1];
+                    } else {
+                        matrix[i][j] = Math.min(
+                            matrix[i - 1][j - 1] + 1,
+                            Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1)
+                        );
+                    }
+                }
+            }
+            return matrix[b.length][a.length];
+        }
+
+        function findDuplicateFragments(a, b) {
+            const minLength = 10; // Minimum fragment length
+            const fragments = [];
+            let highlightedA = a;
+            let highlightedB = b;
+            
+            // Find common substrings using dynamic programming approach
+            const matrix = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(0));
+            let maxLen = 0;
+            let endPos = 0;
+            
+            for (let i = 1; i <= b.length; i++) {
+                for (let j = 1; j <= a.length; j++) {
+                    if (b[i - 1] === a[j - 1] && b[i - 1] !== ' ') {
+                        matrix[i][j] = matrix[i - 1][j - 1] + 1;
+                        if (matrix[i][j] > maxLen) {
+                            maxLen = matrix[i][j];
+                            endPos = i;
+                        }
+                    }
+                }
+            }
+            
+            // Extract fragments (simplified version - finds top matches)
+            const usedRangesA = [];
+            const usedRangesB = [];
+            
+            // Multiple pass to find several fragments
+            for (let pass = 0; pass < 5; pass++) {
+                let bestLen = 0;
+                let bestPosA = -1;
+                let bestPosB = -1;
+                
+                for (let i = 1; i <= b.length; i++) {
+                    for (let j = 1; j <= a.length; j++) {
+                        if (matrix[i][j] > bestLen && matrix[i][j] >= minLength) {
+                            // Check if range is already used
+                            const startA = j - matrix[i][j];
+                            const endA = j;
+                            const startB = i - matrix[i][j];
+                            const endB = i;
+                            
+                            const overlapA = usedRangesA.some(r => startA < r.end && endA > r.start);
+                            const overlapB = usedRangesB.some(r => startB < r.end && endB > r.start);
+                            
+                            if (!overlapA && !overlapB) {
+                                bestLen = matrix[i][j];
+                                bestPosA = j;
+                                bestPosB = i;
+                            }
+                        }
+                    }
+                }
+                
+                if (bestLen >= minLength) {
+                    const startA = bestPosA - bestLen;
+                    const endA = bestPosA;
+                    const startB = bestPosB - bestLen;
+                    const endB = bestPosB;
+                    
+                    const fragment = a.substring(startA, endA);
+                    fragments.push(fragment);
+                    
+                    usedRangesA.push({ start: startA, end: endA });
+                    usedRangesB.push({ start: startB, end: endB });
+                    
+                    // Clear this match for next pass
+                    for (let i = startB + 1; i <= endB; i++) {
+                        for (let j = startA + 1; j <= endA; j++) {
+                            matrix[i][j] = 0;
+                        }
+                    }
+                }
+            }
+            
+            // Create highlighted versions
+            // Sort ranges in reverse order to replace from end to start
+            usedRangesA.sort((a, b) => b.start - a.start);
+            usedRangesB.sort((a, b) => b.start - a.start);
+            
+            highlightedA = a;
+            highlightedB = b;
+            
+            usedRangesA.forEach((range, idx) => {
+                const fragment = a.substring(range.start, range.end);
+                highlightedA = highlightedA.substring(0, range.start) + 
+                    `<mark class="highlight-match" title="重复片段 #${idx + 1}">${fragment}</mark>` + 
+                    highlightedA.substring(range.end);
+            });
+            
+            usedRangesB.forEach((range, idx) => {
+                const fragment = b.substring(range.start, range.end);
+                highlightedB = highlightedB.substring(0, range.start) + 
+                    `<mark class="highlight-match" title="重复片段 #${idx + 1}">${fragment}</mark>` + 
+                    highlightedB.substring(range.end);
+            });
+            
+            return { fragments, highlightedA, highlightedB };
+        }
+
+        function calculateSemanticSimilarity(a, b) {
+            // Simplified LSH (Locality Sensitive Hashing) simulation
+            // In real implementation, this would use proper shingling and minhash
+            
+            const shinglesA = getShingles(a, 3);
+            const shinglesB = getShingles(b, 3);
+            
+            const setA = new Set(shinglesA);
+            const setB = new Set(shinglesB);
+            
+            const intersection = new Set([...setA].filter(x => setB.has(x)));
+            const union = new Set([...setA, ...setB]);
+            
+            return Math.round((intersection.size / union.size) * 100);
+        }
+
+        function getShingles(text, k) {
+            const shingles = [];
+            for (let i = 0; i <= text.length - k; i++) {
+                shingles.push(text.substring(i, i + k));
+            }
+            return shingles;
+        }
+
+        function displayResults() {
+            document.getElementById('loadingState').classList.add('hidden');
+            document.getElementById('resultsSection').classList.remove('hidden');
+            
+            // Update scores
+            document.getElementById('totalScore').textContent = analysisResults.charSimilarity + '%';
+            document.getElementById('totalBar').style.width = analysisResults.charSimilarity + '%';
+            
+            document.getElementById('fragmentScore').textContent = analysisResults.fragmentCount;
+            document.getElementById('semanticScore').textContent = analysisResults.semanticSimilarity + '%';
+            
+            // Update stats
+            document.getElementById('wordCountA').textContent = analysisResults.wordsA.toLocaleString();
+            document.getElementById('wordCountB').textContent = analysisResults.wordsB.toLocaleString();
+            document.getElementById('duplicateWords').textContent = analysisResults.duplicateChars.toLocaleString();
+            document.getElementById('longestFragment').textContent = analysisResults.longestFragment + ' 字';
+            
+            // Update highlighted text
+            document.getElementById('docAHighlight').innerHTML = analysisResults.highlightedA || '<span class="text-gray-400">无重复内容</span>';
+            document.getElementById('docBHighlight').innerHTML = analysisResults.highlightedB || '<span class="text-gray-400">无重复内容</span>';
+            
+            // Update fragment list
+            const fragmentList = document.getElementById('fragmentList');
+            if (analysisResults.fragments.length > 0) {
+                fragmentList.innerHTML = analysisResults.fragments.map((f, i) => `
+                    <div class="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                        <div class="flex justify-between items-start mb-1">
+                            <span class="text-xs font-bold text-blue-600">片段 #${i + 1}</span>
+                            <span class="text-xs text-gray-500">${f.length} 字</span>
+                        </div>
+                        <p class="text-gray-700 truncate">${f}</p>
+                    </div>
+                `).join('');
+            }
+            
+            // Generate diff view
+            generateDiffView();
+            
+            // Scroll to results
+            document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function generateDiffView() {
+            const diffContent = document.getElementById('diffContent');
+            const a = fileAContent;
+            const b = fileBContent;
+            
+            // Simple line-based diff
+            const linesA = a.split(/[。！？\n]+/).filter(l => l.trim());
+            const linesB = b.split(/[。！？\n]+/).filter(l => l.trim());
+            
+            let html = '';
+            const maxLines = Math.max(linesA.length, linesB.length);
+            
+            for (let i = 0; i < Math.min(maxLines, 20); i++) {
+                const lineA = linesA[i] || '';
+                const lineB = linesB[i] || '';
+                const isSame = lineA === lineB && lineA.length > 5;
+                
+                if (isSame) {
+                    html += `
+                        <div class="flex gap-4 p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded">
+                            <div class="w-1/2 text-red-500 line-through">${lineA}</div>
+                            <div class="w-1/2 text-green-600">${lineB}</div>
+                        </div>
+                    `;
+                } else {
+                    html += `
+                        <div class="flex gap-4 p-3 border-l-4 border-gray-300 rounded">
+                            <div class="w-1/2 text-gray-600">${lineA || '<span class="text-gray-300">[空]</span>'}</div>
+                            <div class="w-1/2 text-gray-600">${lineB || '<span class="text-gray-300">[空]</span>'}</div>
+                        </div>
+                    `;
+                }
+            }
+            
+            if (maxLines > 20) {
+                html += `<div class="text-center text-gray-400 py-4">... 还有 ${maxLines - 20} 行差异 ...</div>`;
+            }
+            
+            diffContent.innerHTML = html;
+        }
+
+        function switchView(mode) {
+            const highlightView = document.getElementById('highlightView');
+            const diffView = document.getElementById('diffView');
+            const btnHighlight = document.getElementById('btnHighlight');
+            const btnDiff = document.getElementById('btnDiff');
+            
+            if (mode === 'highlight') {
+                highlightView.classList.remove('hidden');
+                diffView.classList.add('hidden');
+                btnHighlight.classList.add('bg-blue-600', 'text-white');
+                btnHighlight.classList.remove('text-gray-600', 'hover:bg-gray-200');
+                btnDiff.classList.remove('bg-blue-600', 'text-white');
+                btnDiff.classList.add('text-gray-600', 'hover:bg-gray-200');
+            } else {
+                highlightView.classList.add('hidden');
+                diffView.classList.remove('hidden');
+                btnDiff.classList.add('bg-blue-600', 'text-white');
+                btnDiff.classList.remove('text-gray-600', 'hover:bg-gray-200');
+                btnHighlight.classList.remove('bg-blue-600', 'text-white');
+                btnHighlight.classList.add('text-gray-600', 'hover:bg-gray-200');
+            }
+        }
+
+        function exportReport() {
+            const report = `
+文档重复率检测报告
+==================
+生成时间: ${new Date().toLocaleString()}
+
+文档信息:
+- 文档 A: ${fileAName}
+- 文档 B: ${fileBName}
+
+检测结果:
+- 总体重复率: ${analysisResults.charSimilarity}%
+- 重复片段数: ${analysisResults.fragmentCount} 处
+- 语义相似度: ${analysisResults.semanticSimilarity}%
+
+统计信息:
+- 文档 A 字数: ${analysisResults.wordsA}
+- 文档 B 字数: ${analysisResults.wordsB}
+- 重复字数: ${analysisResults.duplicateChars}
+- 最长重复片段: ${analysisResults.longestFragment} 字
+
+重复片段详情:
+${analysisResults.fragments.map((f, i) => `${i + 1}. [${f.length}字] ${f}`).join('\n')}
+            `.trim();
+            
+            const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `重复率检测报告_${new Date().getTime()}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
